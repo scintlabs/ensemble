@@ -11,20 +11,16 @@ Message = Any
 
 @runtime_checkable
 class Actor(Protocol):
-    async def receive(self, ctx: "Context", msg: Message) -> None:
-        ...
+    async def receive(self, ctx: "Context", msg: Message) -> None: ...
 
 
 @runtime_checkable
 class ActorRef(Protocol):
-    def tell(self, msg: Message) -> None:
-        ...
+    def tell(self, msg: Message) -> None: ...
 
-    async def ask(self, msg: Message, timeout: float | None = None) -> Message:
-        ...
+    async def ask(self, msg: Message, timeout: float | None = None) -> Message: ...
 
-    def path(self) -> str:
-        ...
+    def path(self) -> str: ...
 
 
 @runtime_checkable
@@ -38,20 +34,18 @@ class Context(Protocol):
         name: str | None = None,
         supervisor: "Strategy" | None = None,
         dispatcher: "Dispatcher" | None = None,
-    ) -> ActorRef:
-        ...
+    ) -> ActorRef: ...
 
-    def schedule(self, delay: float, msg: Message, target: ActorRef) -> None:
-        ...
+    def schedule(self, delay: float, msg: Message, target: ActorRef) -> None: ...
 
-    def stop(self, ref: ActorRef) -> None:
-        ...
+    def stop(self, ref: ActorRef) -> None: ...
 
 
 @dataclass(slots=True)
 class _Envelope:
     sender: ActorRef | None
     msg: Message
+    priority: int = 0
 
 
 class _Ask:
@@ -60,3 +54,9 @@ class _Ask:
     def __init__(self, message: Message, future: asyncio.Future):
         self.message = message
         self.future = future
+
+
+class _Stop:
+    """Internal message used to signal actor termination."""
+
+    __slots__ = ()
