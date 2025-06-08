@@ -6,7 +6,7 @@ import asyncio
 import uuid
 from typing import Callable
 
-from .core import Actor, ActorRef, Context, _Envelope, _Ask
+from .core import Actor, ActorRef, Context, _Envelope, _Ask, _Stop
 from .dispatch import AsyncIODisp, Dispatcher
 from .scheduler import TimerScheduler
 from .mailbox import FifoMailbox
@@ -43,7 +43,9 @@ class SimpleContext(Context):
         supervisor=None,
         dispatcher: Dispatcher | None = None,
     ) -> ActorRef:
-        return self._system.spawn(behavior, name=name, supervisor=supervisor, dispatcher=dispatcher)
+        return self._system.spawn(
+            behavior, name=name, supervisor=supervisor, dispatcher=dispatcher
+        )
 
     def schedule(self, delay: float, msg, target: ActorRef) -> None:
         self._system.scheduler.schedule(delay, lambda: target.tell(msg))
@@ -73,34 +75,24 @@ class ActorSystem:
         actor = behavior()
         ctx = SimpleContext(ref, self)
         disp = dispatcher or self._dispatcher
-        asyncio.create_task(self._run_actor(mailbox, actor, ctx, disp))
+        asyncio.create_task(disp.attach(mailbox, actor, ctx))
         return ref
 
-    async def _run_actor(self, mailbox: FifoMailbox, actor: Actor, ctx: SimpleContext, disp: Dispatcher) -> None:
-        while True:
-            envelope = await mailbox.get()
-            payload = envelope.msg
-            ctx.sender = envelope.sender
-            if isinstance(payload, _Ask):
-                real_msg = payload.message
-            else:
-                real_msg = payload
-            try:
-                result = await actor.receive(ctx, real_msg)
-                if isinstance(payload, _Ask):
-                    payload.future.set_result(result)
-            except Exception as exc:
-                if isinstance(payload, _Ask):
-                    payload.future.set_exception(exc)
-                # TODO: supervision
-
-    def _enqueue(self, ref: LocalActorRef, msg) -> None:
-        envelope = _Envelope(sender=None, msg=msg)
+    def _enqueue(
+        self,
+        ref: LocalActorRef,
+        msg,
+        *,
+        sender: ActorRef | None = None,
+        priority: int = 0,
+    ) -> None:
+        envelope = _Envelope(sender=sender, msg=msg, priority=priority)
         asyncio.create_task(ref._mailbox.put(envelope))
 
     def stop(self, ref: ActorRef) -> None:
-        # TODO: implement actor stopping
-        pass
+        if isinstance(ref, LocalActorRef):
+            self._enqueue(ref, _Stop())
+            self._registry.pop(ref.path(), None)
 
 
 def spawn(behavior: Callable[[], Actor], *, name: str | None = None) -> ActorRef:
